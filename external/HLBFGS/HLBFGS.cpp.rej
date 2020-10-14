@@ -1,0 +1,214 @@
+--- ../HLBFGS_ORG/HLBFGS.cpp	2019-09-23 11:23:08.000000000 -0400
++++ ./HLBFGS.cpp	2019-09-23 11:23:13.000000000 -0400
+@@ -87,7 +87,7 @@
+ }
+ 
+ //////////////////////////////////////////////////////////////////////////
+-void HLBFGS_UPDATE_Hessian(int N, int M, double *q, double *s, double *y,
++void HLBFGS_UPDATE_Hessian(void * /*instance*/, int N, int M, double *q, double *s, double *y,
+ 						   int cur_pos, double *diag, int INFO[])
+ {
+ 	if (M <= 0 || INFO[2] == 0)
+@@ -123,7 +123,7 @@
+ 		double dyy = 0;
+ 		double dinvss = 0;
+ 		int i = 0;
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i) reduction(+:dinvss) reduction(+:dyy)
+ #endif
+ 		for (i = 0; i < N; i++)
+@@ -131,7 +131,7 @@
+ 			dinvss += s_start[i] * s_start[i] / diag[i];
+ 			dyy += diag[i] * y_start[i] * y_start[i];
+ 		}
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i)
+ #endif
+ 		for (i = 0; i < N; i++)
+@@ -142,7 +142,7 @@
+ 		}
+ 		if (INFO[12] == 1)
+ 		{
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i)
+ #endif
+ 			for (i = 0; i < N; i++)
+@@ -246,12 +246,12 @@
+ 	}
+ 	//determine new q
+ 
+-	const double minus_one = -1.0;
++//	const double minus_one = -1.0;
+ 	if (cg_beta != 1.0)
+ 		HLBFGS_DSCAL(N, cg_beta, prev_q_update);
+ 
+ 	int i = 0;
+-//#ifdef USE_OPENMP
++//#ifdef HLBFGS_OPENMP
+ //#pragma omp parallel for private(i)
+ //#endif
+ 	for (i = 0; i < N; i++)
+@@ -267,7 +267,7 @@
+ 	else if (cg_lambda < 0)
+ 		cg_lambda = 0;
+ 
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i)
+ #endif
+ 	for (i = 0; i < N; i++)
+@@ -278,18 +278,20 @@
+ }
+ 
+ //////////////////////////////////////////////////////////////////////////
+-void HLBFGS(int N, int M, double *x, void EVALFUNC(int, double*, double*,
+-			double*, double*), void EVALFUNC_H(int, double*, double*, double*,
+-			double*, HESSIAN_MATRIX&), void USER_DEFINED_HLBFGS_UPDATE_H(int, int,
+-			double*, double*, double*, int, double*, int[]), void NEWITERATION(int,
+-			int, double*, double*, double*, double*), double PARAMETERS[],
++int HLBFGS(int N, int M, double *x, void EVALFUNC(void *,int, double*, double*,
++			double*, double*), void EVALFUNC_H(void *,int, double*, double*, double*,
++			double*, HESSIAN_MATRIX&), void USER_DEFINED_HLBFGS_UPDATE_H(void *,int, int,
++			double*, double*, double*, int, double*, int[]), void NEWITERATION(void *,int,
++			int, double*, double*, double*, double*), void * instance, double PARAMETERS[],
+ 			int INFO[])
+ {
++    int retval;
+ 	int T = INFO[6];
+ 	if (N < 1 || M < 0 || T < 0 || INFO[4] < 1)
+ 	{
+ 		HLBFGS_MESSAGE(INFO[5] != 0, 0, PARAMETERS);
+-		return;
++        retval = 0;
++		return retval;
+ 	}
+ 	//allocate mem
+ 	std::vector<double> q_vec(N), g_vec(N), alpha_vec(M <= 0 ? 0 : M), rho_vec(
+@@ -345,7 +347,7 @@
+ 	m_hessian.get_icfs_info().allocate_mem(N);
+ 	char task1 = 'N';
+ 	char task2 = 'T';
+-	double prev_f;
++	double prev_f = 0; // wim added = 0 to suppress compiler warning - does not matter since only used for info[2]>0
+ 	int i;
+ 
+ 	//////////////////////////////////////////////////////////////////////////
+@@ -353,12 +355,12 @@
+ 	{
+ 		if (INFO[7] == 1 && ((T == 0) || (INFO[2] % T == 0)))
+ 		{
+-			EVALFUNC_H(N, x, INFO[2] == 0 ? 0 : prev_x, &f, g, m_hessian);
++			EVALFUNC_H(instance, N, x, INFO[2] == 0 ? 0 : prev_x, &f, g, m_hessian);
+ 			HLBFGS_BUILD_HESSIAN_INFO(m_hessian, INFO);
+ 		}
+ 		else if (INFO[2] == 0)
+ 		{
+-			EVALFUNC(N, x, 0, &f, g);
++			EVALFUNC(instance, N, x, 0, &f, g);
+ 			INFO[1]++;
+ 		}
+ 
+@@ -366,7 +368,7 @@
+ 		{
+ 			//compute s and y
+ 			start = cur_pos * N;
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i)
+ #endif
+ 			for (i = 0; i < N; i++)
+@@ -404,7 +406,7 @@
+ 				rho[cur_pos] *= update_alpha;
+ 			}
+ 		}
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i)
+ #endif
+ 		for (i = 0; i < N; i++)
+@@ -431,7 +433,7 @@
+ 			}
+ 			else
+ 			{
+-				USER_DEFINED_HLBFGS_UPDATE_H(N, M, q, s, y, cur_pos, diag, INFO);
++				USER_DEFINED_HLBFGS_UPDATE_H(instance, N, M, q, s, y, cur_pos, diag, INFO);
+ 			}
+ 		}
+ 		else
+@@ -450,7 +452,7 @@
+ 			else
+ 			{
+ 				INFO[12] = 0;
+-				USER_DEFINED_HLBFGS_UPDATE_H(N, M, q, s, y, cur_pos, INFO[3]
++				USER_DEFINED_HLBFGS_UPDATE_H(instance, N, M, q, s, y, cur_pos, INFO[3]
+ 				== 0 ? (&scale) : diag, INFO);
+ 				if (INFO[3] == 0)
+ 				{
+@@ -481,7 +483,7 @@
+ 					cg_dginit = -HLBFGS_DDOT(N, q, q);
+ 					if (M > 0 && INFO[2] > 0)
+ 					{
+-#ifdef USE_OPENMP
++#ifdef HLBFGS_OPENMP
+ #pragma omp parallel for private(i)
+ #endif
+ 						for (i = 0; i < N; i++)
+@@ -532,7 +534,7 @@
+ 			blinesearch = (info == -1);
+ 			if (blinesearch)
+ 			{
+-				EVALFUNC(N, x, prev_x, &f, g);
++				EVALFUNC(instance, N, x, prev_x, &f, g);
+ 				INFO[1]++;
+ 			}
+ 
+@@ -546,7 +548,7 @@
+ 
+ 		gnorm = HLBFGS_DNRM2(N, g);
+ 		INFO[2]++;
+-		NEWITERATION(INFO[2], INFO[1], x, &f, g, &gnorm);
++		NEWITERATION(instance, INFO[2], INFO[1], x, &f, g, &gnorm);
+ 		double xnorm = HLBFGS_DNRM2(N, x);
+ 		xnorm = 1 > xnorm ? 1 : xnorm;
+ 		rkeep[2] = gnorm;
+@@ -554,29 +556,37 @@
+ 
+ 		if (info != 1)
+ 		{
++            retval = 1;
+ 			HLBFGS_MESSAGE(INFO[5] != 0, 1, PARAMETERS);
+ 			break;
+ 		}
+ 		if (gnorm / xnorm <= PARAMETERS[5])
+ 		{
++            retval = 2;
+ 			HLBFGS_MESSAGE(INFO[5] != 0, 2, PARAMETERS);
+ 			break;
+ 		}
+ 		if (gnorm < PARAMETERS[6])
+ 		{
++            retval = 3;
+ 			HLBFGS_MESSAGE(INFO[5] != 0, 3, PARAMETERS);
+ 			break;
+ 		}
+ 		if (stp < stpmin || stp > stpmax)
+ 		{
++            retval = 4;
+ 			HLBFGS_MESSAGE(INFO[5] != 0, 4, PARAMETERS);
+ 			break;
+ 		}
+ 		if (INFO[2] > INFO[4])
+ 		{
++            retval = 5;
+ 			HLBFGS_MESSAGE(INFO[5] != 0, 5, PARAMETERS);
+ 			break;
+ 		}
+ 
+ 	} while (true);
++
++    return retval;
++    
+ }
